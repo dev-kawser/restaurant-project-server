@@ -44,6 +44,8 @@ async function run() {
 
         const userCollection = client.db("bistroRestaurantCollection").collection("users")
 
+        const paymentCollection = client.db("bistroRestaurantCollection").collection("payments")
+
 
         // JWT related api
 
@@ -199,7 +201,7 @@ async function run() {
 
         app.post('/create-checkout-session', async (req, res) => {
 
-            const {price} = req.body;
+            const { price } = req.body;
             // console.log("price" , price);
             const amount = parseInt(price * 100);
             const paymentIntent = await stripe.paymentIntents.create({
@@ -212,6 +214,37 @@ async function run() {
                 clientSecret: paymentIntent.client_secret
             })
         });
+
+        app.post('/payments', async (req, res) => {
+            const payment = req.body;
+            const paymentResult = await paymentCollection.insertOne(payment);
+            const query = {
+                _id: {
+                    $in: payment.cartIds.map(id => new ObjectId(id))
+                }
+            }
+            const deleteResult = await cartsCollection.deleteMany(query)
+
+            res.send({ paymentResult, deleteResult });
+        })
+
+        app.get("/payments/:email", verifyToken, async (req, res) => {
+            const query = { email: req.params.email }
+            if (req.params.email !== res.decoded.email) {
+                return res.status(403).send({ message: "forbidden access" })
+            }
+            const result = await paymentCollection.find(query).toArray()
+            res.send(result)
+        })
+
+        // app.get('/payments/:email', verifyToken, async (req, res) => {
+        //     const query = { email: req.params.email }
+        //     if (req.params.email !== req.decoded.email) {
+        //         return res.status(403).send({ message: 'forbidden access' });
+        //     }
+        //     const result = await paymentCollection.find(query).toArray();
+        //     res.send(result);
+        // })
 
 
 

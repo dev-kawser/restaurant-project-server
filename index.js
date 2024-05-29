@@ -217,6 +217,8 @@ async function run() {
 
         app.post('/payments', async (req, res) => {
             const payment = req.body;
+            payment.cartIds = payment.cartIds.map(id => new ObjectId(id))
+            payment.menuItemIds = payment.menuItemIds.map(id => new ObjectId(id))
             const paymentResult = await paymentCollection.insertOne(payment);
             const query = {
                 _id: {
@@ -230,21 +232,70 @@ async function run() {
 
         app.get("/payments/:email", verifyToken, async (req, res) => {
             const query = { email: req.params.email }
-            if (req.params.email !== res.decoded.email) {
+            if (req.params.email !== req.decoded.email) {
                 return res.status(403).send({ message: "forbidden access" })
             }
             const result = await paymentCollection.find(query).toArray()
             res.send(result)
         })
 
-        // app.get('/payments/:email', verifyToken, async (req, res) => {
-        //     const query = { email: req.params.email }
-        //     if (req.params.email !== req.decoded.email) {
-        //         return res.status(403).send({ message: 'forbidden access' });
-        //     }
-        //     const result = await paymentCollection.find(query).toArray();
-        //     res.send(result);
-        // })
+        // stats or analytics 
+
+        app.get("/admin-stats", verifyToken, verifyAdmin, async (req, res) => {
+            const users = await userCollection.estimatedDocumentCount();
+            const menuItems = await menuCollection.estimatedDocumentCount();
+            const orders = await paymentCollection.estimatedDocumentCount();
+
+            const result = await paymentCollection.aggregate([
+                {
+                    $group: {
+                        _id: null,
+                        totalRevenue: {
+                            $sum: '$price'
+                        }
+                    }
+                }
+            ]).toArray()
+
+            const revenue = result.length > 0 ? result[0].totalRevenue : 0;
+
+            res.send({
+                users,
+                menuItems,
+                orders,
+                revenue
+            })
+        })
+
+        // ------------
+
+        app.get("/order-stats", async (req, res) => {
+            const result = await paymentCollection.aggregate([
+                {
+                    $unwind: '$menuItemIds'
+                },
+                {
+                    $lookup: {
+                        from: 'menu',
+                        localField: 'menuItemIds',
+                        foreignField: '_id',
+                        as: 'menuItems'
+                    }
+                },
+                {
+                    $unwind: '$menuItems'
+                },
+                {
+                    $group: {
+                        _id: '$menuItems.category',
+                        quantity: { $sum: 1 },
+                        revenue: { $sum: '$menuItems.price' }
+                    }
+                }
+            ]).toArray()
+
+            res.send(result)
+        })
 
 
 
